@@ -1,6 +1,6 @@
 #include "input.hpp"
-#include "motors.hpp"
 #include "lanc.hpp"
+#include "motors.hpp"
 
 void setup() {
   input_setup();
@@ -11,7 +11,7 @@ void setup() {
 }
 
 void loop() {
-  motors_step();
-  input_step();
-  lanc_step();
+  motors_tick();
+  input_tick();
+  lanc_tick();
 }

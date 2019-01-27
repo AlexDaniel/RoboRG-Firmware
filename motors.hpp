@@ -15,6 +15,5 @@
 #define MICROSTEPS (256 * (MY_MULT))
 // #define STEPS_PER_REVOLUTION ((NATIVE_STEPS_PER_REV) * (MICROSTEPS))
 
-void motors_step();
-void motors_step_speeds();
 void motors_setup();
+void motors_tick();

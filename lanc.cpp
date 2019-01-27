@@ -17,6 +17,7 @@ uint8_t bit_duration = 104 * ticks_per_us;
 uint8_t timing_delay =   0 * ticks_per_us;
 uint8_t timing_shift =  13 * ticks_per_us;
 
+/// Configures external interrupt for start bit detection.
 void lanc_setup_external_interrupt() {
   EIMSK |= (1 << INT0); // External Interrupt Mask
   // 10 in ISC01:ISC00 for falling edge
@@ -24,24 +25,37 @@ void lanc_setup_external_interrupt() {
   EICRA |= (0 << ISC00); // no-op
 }
 
+/// Configures the timer for LANC.
 void lanc_setup_timer() {
   TCCR1A = 0; // Counter Control Register A
   TCCR1B = 0; // Counter Control Register B
   TCNT1  = 0; // Counter Value
 
   TCCR1A |= (1 << WGM11);  // WGM21 – Waveform Generation CTC mode
-  // TCCR2B |= 1 << CS21;   // CS21 – /8 clock select
   TIMSK1 |= (1 << OCIE1A); // Timer 2 Mask
+  // prescaler is configured later in lanc_kickstart()
 }
 
+/// Configures pins and calls lanc_setup_external_interrupt() and
+/// lanc_setup_timer().
 void lanc_setup() {
-  pinMode(LANC_PIN_IN, INPUT); // listens to the LANC line
-  pinMode(LANC_PIN_OUT, OUTPUT); // writes to the LANC line
+  pinMode(LANC_PIN_IN,   INPUT);
+  pinMode(LANC_PIN_OUT, OUTPUT);
 
   lanc_setup_external_interrupt();
   lanc_setup_timer();
 }
 
+/// Starts timed output of bits.
+///
+/// /verbatim
+///
+/// ⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠧⠯⠯⠯⠯⠯⠯⠯⠯⠏⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠧⠯⠯⠯⠯⠯⠯⠯⠯⠏⠉⠉⠉⠉⠉⠉⠉⠉⠉
+///              ⬈ ↑↑↑↑↑↑↑↑ ⬉                            ⬈ ↑↑↑↑↑↑↑↑ ⬉
+///     start bit    cmd1    stop bit           start bit    cmd1    stop bit
+///    (kickstart)          (knockout)         (kickstart)          (knockout)
+///
+/// \endverbatim
 void lanc_kickstart() {
   EIMSK &= ~(1 << INT0); // disable pin interrupt
   TCNT1 = 0;
@@ -50,6 +64,7 @@ void lanc_kickstart() {
   TCCR1B |= 1 << CS11; // CS21 – /8 clock select
 }
 
+/// Stops the timer and re-enables external interrupt.
 void lanc_knockout() {
   TCCR1B = 0;
   EIFR = (1 << INTF0); // External Interrupt Flag Register
@@ -57,14 +72,11 @@ void lanc_knockout() {
 }
 
 
-// ⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠧⠯⠯⠯⠯⠯⠯⠯⠯⠏⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠧⠯⠯⠯⠯⠯⠯⠯⠯⠏⠉⠉⠉⠉⠉⠉⠉⠉⠉
-//   start-bit ↑   cmd1        knockout      start-bit ↑  cmd2
+volatile uint8_t cmd1 = 0;
+volatile uint8_t cmd2 = 0;
 
-
-volatile uint8_t cmd1 = CAM_TYPE;
-volatile uint8_t cmd2 = 0b00011000;
-
-void sendCMD(uint8_t cmd1_, uint8_t cmd2_) {
+/// Schedules a lanc command (the data will be sent later, if ever).
+void send_command(uint8_t cmd1_, uint8_t cmd2_) {
   cmd1 = cmd1_;
   cmd2 = cmd2_;
 }
@@ -100,59 +112,25 @@ ISR(TIMER1_COMPA_vect) {
   }
 }
 
+/// Send a zoom command to the camera (-8 … +8).
+///
+/// Per http://www.boehmel.de/lanc.htm:
+/// ① 0b0001_1000 – Normal  command to VTR or video camera
+/// ② 0b0010_1000 – Special command to        video camera
+/// ③ 0b0011_1000 – Special command to VTR
+/// ④ 0b0001_1110 – Normal  command to still  video camera
+///
+/// There are zooming commands in both ② and ④, and we will use ②.
+void zoom(int8_t speed) {
+  uint8_t absolute = speed > 0 ? +speed : -speed;
+  if (absolute > 8)
+    return; // no such LANC command
+  if (absolute == 0)
+    return; // nothing to do
 
-void zoom(int speed) {
-  switch (speed) {
-  case 0: //speed 1
-    sendCMD(CAM_TYPE, B00010000);
-    break;
-  case -1: //speed 2
-    sendCMD(CAM_TYPE, B00010010);
-    break;
-  case -2: //speed 3
-    sendCMD(CAM_TYPE, B00010100);
-    break;
-  case -3: //speed 4
-    sendCMD(CAM_TYPE, B00010110);
-    break;
-  case -4: //speed 5
-    sendCMD(CAM_TYPE, B00011000);
-    break;
-  case -5: //speed 6
-    sendCMD(CAM_TYPE, B00011010);
-    break;
-  case -6: //speed 7
-    sendCMD(CAM_TYPE, B00011100);
-    break;
-  case -7: //speed 8
-    sendCMD(CAM_TYPE, B00011110);
-    break;
-
-  case 1: //speed 1
-    sendCMD(CAM_TYPE, B00000000);
-    break;
-  case 2: //speed 2
-    sendCMD(CAM_TYPE, B00000010);
-    break;
-  case 3: //speed 3
-    sendCMD(CAM_TYPE, B00000100);
-    break;
-  case 4: //speed 4
-    sendCMD(CAM_TYPE, B00000110);
-    break;
-  case 5: //speed 5
-    sendCMD(CAM_TYPE, B00001000);
-    break;
-  case 6: //speed 6
-    sendCMD(CAM_TYPE, B00001010);
-    break;
-  case 7: //speed 7
-    sendCMD(CAM_TYPE, B00001100);
-    break;
-  case 8: //speed 8
-    sendCMD(CAM_TYPE, B00001110);
-    break;
-  }
+  uint8_t byte1 = 0b00101000;
+  uint8_t byte2 = ((speed < 0) << 4) | ((absolute - 1) << 1);
+  send_command(byte1, byte2);
 }
 
 // some zoom ramping
@@ -162,11 +140,11 @@ int16_t zoom_speed = 0;
 uint8_t lanc_rate_counter = 0;
 uint16_t lanc_silence_counter = 0;
 
-void lanc_step() {
+void lanc_tick() {
   int lanc_5v = digitalRead(LANC_PIN_IN);
   if (!zooming && lanc_5v) {
     if (lanc_silence_counter++ > 500) {
-      int16_t target_multiplied = target_zoom_speed * zoom_multiplier;
+      int16_t target_multiplied = zoom_speed_goal * zoom_multiplier;
       if (zoom_speed != target_multiplied) {
         int8_t inc = target_multiplied - zoom_speed > 0 ? +1 : -1;
         if (-zoom_multiplier * 2 < zoom_speed && zoom_speed < +zoom_multiplier * 2) {

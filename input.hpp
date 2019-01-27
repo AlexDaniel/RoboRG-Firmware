@@ -1,12 +1,15 @@
 #pragma once
 
-extern volatile int  pan_acceleration;
-extern volatile int tilt_acceleration;
+#include <stdint.h>
 
-extern volatile int  pan_speed_goal;
-extern volatile int tilt_speed_goal;
+/// Angular  pan acceleration to be achieved (steps/s²)
+extern volatile int16_t acceleration[2];
 
-extern int target_zoom_speed;
+/// Angular speed to be achieved (steps/s)
+extern volatile int16_t speed_goal[2];
 
-void input_step();
+/// Zoom speed to be achieved (camera-specific units, -8 … +8 with LANC)
+extern int8_t zoom_speed_goal;
+
 void input_setup();
+void input_tick();
