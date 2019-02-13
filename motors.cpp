@@ -44,8 +44,8 @@ Driver axis_drivers[axis_total] = {
 /// prescaler is changing.
 uint32_t time = 0;
 
-volatile int16_t speed_current[axis_total];
-uint16_t prescaler_current[axis_total];
+volatile int16_t speed_current[axis_total] = {};
+uint16_t prescaler_current[axis_total] = {};
 
 
 void motors_setup_timer() {
@@ -92,7 +92,7 @@ uint16_t calculate_prescaler(int16_t speed) {
   }
 }
 
-void axis_ISR(motors_axis_t axis) {
+void update_timer(motors_axis_t axis) {
   int16_t speed = speed_current[axis];
   int16_t absolute = speed < 0 ? -speed : speed;
 
@@ -146,16 +146,32 @@ void axis_ISR(motors_axis_t axis) {
     return;
   }
   prescaler_current[axis] = prescaler;
+}
 
+void do_step_pan() {
+  int16_t speed = speed_current[pan];
   if        (speed > 0) {
-    digitalWrite(dir_pin,   LOW);
-    digitalWrite(step_pin, HIGH);
+    digitalWrite(PAN_DIR_PIN,  LOW);
+    digitalWrite(PAN_STEP_PIN, HIGH);
+    digitalWrite(PAN_STEP_PIN, LOW);
   } else if (speed < 0) {
-    digitalWrite(dir_pin,  HIGH);
-    digitalWrite(step_pin, HIGH);
+    digitalWrite(PAN_DIR_PIN,  HIGH);
+    digitalWrite(PAN_STEP_PIN, HIGH);
+    digitalWrite(PAN_STEP_PIN, LOW);
   } else { } // zero speed, no stepping
+}
 
-  digitalWrite(step_pin, LOW);
+void do_step_tilt() {
+  int16_t speed = speed_current[tilt];
+  if        (speed > 0) {
+    digitalWrite(TILT_DIR_PIN,  LOW);
+    digitalWrite(TILT_STEP_PIN, HIGH);
+    digitalWrite(TILT_STEP_PIN, LOW);
+  } else if (speed < 0) {
+    digitalWrite(TILT_DIR_PIN,  HIGH);
+    digitalWrite(TILT_STEP_PIN, HIGH);
+    digitalWrite(TILT_STEP_PIN, LOW);
+  } else { } // zero speed, no stepping
 }
 
 void timekeeping() {
@@ -163,11 +179,13 @@ void timekeeping() {
 }
 
 ISR(TIMER0_COMPA_vect) {
-  axis_ISR(pan);
+  // update_timer(pan);
+  do_step_pan();
 }
 ISR(TIMER2_COMPA_vect) {
   timekeeping();
-  axis_ISR(tilt);
+  // update_timer(tilt);
+  do_step_tilt();
 }
 
 void update_speed(motors_axis_t axis) {
@@ -185,13 +203,16 @@ void update_speed(motors_axis_t axis) {
   } else {
     speed_current[axis] -= acc;
   }
+  update_timer(axis);
 }
 
 void tick_speeds() {
-  uint32_t ticks_required = BASE_FREQUENCY / ACCELERATION_FREQUENCY;
+  uint32_t ticks_required = BASE_FREQUENCY / 1024 / ACCELERATION_FREQUENCY;
   if (time < ticks_required)
     return;
   time -= ticks_required;
+  if (time > ticks_required * 2)
+    time = 0;
 
   for (size_t i = 0; i < axis_total; i++)
     update_speed(static_cast<motors_axis_t>(i));
@@ -225,6 +246,10 @@ void motors_setup() {
 
   motors_enable();
   motors_setup_timer();
+
+  // init speeds
+  for (size_t i = 0; i < axis_total; i++)
+    update_speed(static_cast<motors_axis_t>(i));
 }
 
 void motors_tick() {
