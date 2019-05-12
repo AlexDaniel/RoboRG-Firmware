@@ -5,7 +5,8 @@ Source code of the firmware.
 ## License
 
     RoboRG is a low-cost camera motion control system.
-    Copyright © 2018-2019  Aleks-Daniel Jakimenko-Aleksejev
+    Copyright © 2018-2019
+        Aleks-Daniel Jakimenko-Aleksejev <alex.jakimenko@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as
