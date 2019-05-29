@@ -259,12 +259,12 @@ void lanc_datagram_tick(void) {
 }
 
 void lanc_tick(void) {
-    ///*
+    /*
     // For debugging:
     if (milliseconds % 4000 < 2000) {
         zoom_speed_goal = -4;
     } else {
         zoom_speed_goal = +4;
     }
-    //*/
+    */
 }
