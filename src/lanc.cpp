@@ -53,6 +53,11 @@ volatile uint8_t cmd1 = 0;
 ///
 /// There are zooming commands in both ② and ④, and we will use ②.
 void zoom(int8_t speed) {
+    if (speed == 0) {
+        cmd0 = 0;
+        cmd1 = 0;
+    }
+
     uint8_t absolute = speed > 0 ? +speed : -speed;
     if (absolute > 8)
         return; // no such LANC command
@@ -254,8 +259,7 @@ void lanc_datagram_tick(void) {
         zoom_speed += inc;
     }
     int zoom_command = zoom_speed / zoom_multiplier;
-    if (zoom_command)
-        zoom(zoom_command);
+    zoom(zoom_command);
 }
 
 void lanc_tick(void) {
