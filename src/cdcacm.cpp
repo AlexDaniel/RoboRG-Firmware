@@ -268,5 +268,5 @@ void cdcacm_setup(void) {
 
 
 void cdcacm_tick(void) {
-  usbd_poll(main_usbd_dev);
+    usbd_poll(main_usbd_dev);
 }

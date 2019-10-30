@@ -154,9 +154,9 @@ static void process_lanc_in(uint8_t byte) {
     // byte 4, REC  = 0xFB
     // byte 4, STBY = 0xEB
     if (datagram_byte_counter == 4) {
-      if (byte == 0xEB) {
-        //gpio_toggle(GPIOA, GPIO6);
-      }
+        if (byte == 0xEB) {
+            //gpio_toggle(GPIOA, GPIO6);
+        }
     }
 }
 
