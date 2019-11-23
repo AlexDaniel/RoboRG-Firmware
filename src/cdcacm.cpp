@@ -223,10 +223,6 @@ static void cdcacm_data_rx_cb(usbd_device *usbd_dev, uint8_t ep) {
     for (int i = 0; i < len; i++) {
         input_protocol_state(buf[i]);
     }
-    if (len) {
-        char answer[3] = "OK";
-        usbd_ep_write_packet(usbd_dev, 0x82, answer, 3);
-    }
 }
 
 static void cdcacm_set_config(usbd_device *usbd_dev, uint16_t wValue)
