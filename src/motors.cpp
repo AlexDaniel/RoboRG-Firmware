@@ -27,8 +27,6 @@
 #include "motors.hpp"
 #include "timing.hpp"
 
-// #include <TMC2130Stepper.h>
-
 #define ACCELERATION_FREQUENCY 50
 uint32_t last_update = 0;
 
@@ -36,15 +34,13 @@ uint32_t last_update = 0;
 #define BASE_FREQUENCY 72000000
 #define PRESCALER (BASE_FREQUENCY / 1000000) // 1µs per tick
 
-class Driver {
-    //  friend class TMC2130Stepper;
+class Driver { // TODO refactor
 
 public:
     uint32_t pin_enable;
     uint32_t pin_direction;
     uint32_t pin_step;
     uint32_t pin_chipselect;
-    //TMC2130Stepper stepper;
 
     Driver (
             uint32_t _pin_enable,
@@ -56,7 +52,6 @@ public:
         pin_direction(_pin_direction),
         pin_step(_pin_step),
         pin_chipselect(_pin_chipselect)
-        //stepper(_pin_enable, _pin_direction, _pin_step, _pin_chipselect)
     { }
 };
 
