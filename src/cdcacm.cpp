@@ -204,7 +204,7 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
                 local_buf[9] = 0;
                 // usbd_ep_write_packet(0x83, buf, 10);
                 return USBD_REQ_HANDLED;
-                }
+        }
         case USB_CDC_REQ_SET_LINE_CODING:
                 if (*len < sizeof(struct usb_cdc_line_coding))
                         return USBD_REQ_NOTSUPP;
@@ -217,7 +217,7 @@ static void cdcacm_data_rx_cb(usbd_device *usbd_dev, uint8_t ep) {
     (void)ep;
     (void)usbd_dev;
 
-    char buf[64] = {0};
+    char buf[64] = {};
     int len = usbd_ep_read_packet(usbd_dev, 0x01, buf, 64);
 
     for (int i = 0; i < len; i++) {
