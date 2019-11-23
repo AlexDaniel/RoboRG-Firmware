@@ -3,7 +3,7 @@ OPENCM3_DIR     = libopencm3
 OBJS            += src/main.o src/timing.o src/lanc.o src/cdcacm.o src/input.o src/motors.o
 
 # TODO use -Wpedantic
-CFLAGS          += -O3 -ggdb3
+CFLAGS          += -O3 # -ggdb3
 CPPFLAGS        += -MD -Wall
 CXXFLAGS        += -std=c++17
 LDFLAGS         += -static -nostartfiles
