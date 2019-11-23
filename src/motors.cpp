@@ -55,24 +55,18 @@ public:
     { }
 };
 
-
-enum motors_axis_t { pan, tilt, axis_total };
-
 Driver axis_drivers[axis_total] =
     {
      {  PAN_EN_PIN,  PAN_DIR_PIN,  PAN_STEP_PIN,  PAN_CS_PIN },
      { TILT_EN_PIN, TILT_DIR_PIN, TILT_STEP_PIN, TILT_CS_PIN },
     };
 
-
-// TODO speeds and acceleration are awkwardly in steps per second
-
-volatile int32_t speed_current[axis_total] = {};
+motors_t motors = {};
 
 int32_t step_counter[axis_total] = {};
 
 
-void motors_setup_timers() {
+static void setup_timers() {
     nvic_enable_irq(NVIC_TIM2_IRQ);
     nvic_set_priority(NVIC_TIM2_IRQ, 1);
     rcc_periph_clock_enable(RCC_TIM2);
@@ -90,8 +84,8 @@ void motors_setup_timers() {
     TIM_CR1(TIM3) |= TIM_CR1_CEN; // start timer
 }
 
-void update_timer(motors_axis_t axis) {
-    int32_t speed = speed_current[axis];
+static void update_timer(motors_axis_t axis) {
+    int32_t speed = motors.speed_current[axis];
     int32_t absolute = speed < 0 ? -speed : speed;
 
     uint32_t compare_match = 255;
@@ -116,8 +110,8 @@ void update_timer(motors_axis_t axis) {
 
 
 // TODO refactor and check asm
-void do_step_pan() {
-    int32_t speed = speed_current[pan];
+static void do_step_pan(void) {
+    int32_t speed = motors.speed_current[pan];
     if        (speed > 0) {
         gpio_clear(GPIOB, PAN_DIR_PIN);
         gpio_set(  GPIOA, PAN_STEP_PIN);
@@ -131,8 +125,8 @@ void do_step_pan() {
     } else { } // zero speed, no stepping
 }
 
-void do_step_tilt() {
-    int32_t speed = speed_current[tilt];
+static void do_step_tilt(void) {
+    int32_t speed = motors.speed_current[tilt];
     if        (speed > 0) {
         gpio_clear(GPIOB, TILT_DIR_PIN);
         gpio_set(  GPIOA, TILT_STEP_PIN);
@@ -156,30 +150,29 @@ void tim3_isr(void) {
     TIM_SR(TIM3) &= ~TIM_SR_UIF; // clear interrupt flag
 }
 
-void update_speed(motors_axis_t axis) {
-    int32_t acc  = acceleration[axis];
-    int32_t diff = speed_goal[axis] - speed_current[axis];
+static void update_speed(motors_axis_t axis) {
+    int32_t acc  = motors.acceleration[axis];
+    int32_t diff = motors.speed_goal[axis] - motors.speed_current[axis];
 
     if (-acc < diff && diff < +acc) {
         // already or almost there
-        speed_current[axis] = speed_goal[axis];
-        return;
-    }
-
-    if (diff > 0) {
-        speed_current[axis] += acc;
+        motors.speed_current[axis] = motors.speed_goal[axis];
     } else {
-        speed_current[axis] -= acc;
+        if (diff > 0) {
+            motors.speed_current[axis] += acc;
+        } else {
+            motors.speed_current[axis] -= acc;
+        }
     }
     update_timer(axis);
 }
 
-void tick_speeds() {
+static void tick_speeds(void) {
     for (size_t i = 0; i < axis_total; i++)
         update_speed(static_cast<motors_axis_t>(i));
 }
 
-void motors_driver_setup(Driver driver) {
+static void driver_setup(Driver driver) {
     gpio_set(GPIOB, driver.pin_enable);
     gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_50_MHZ,
                   GPIO_CNF_OUTPUT_PUSHPULL, driver.pin_enable);
@@ -195,17 +188,19 @@ void motors_driver_setup(Driver driver) {
                   GPIO_CNF_OUTPUT_PUSHPULL, driver.pin_step);
 }
 
-void motors_enable() {
+static void motors_enable(void) {
     for (int i = 0; i < axis_total; i++)
         gpio_clear(GPIOB, axis_drivers[i].pin_enable);
 }
 
-void motors_disable() {
+///* currently unused
+static void motors_disable(void) {
     for (int i = 0; i < axis_total; i++)
         gpio_set(GPIOB, axis_drivers[i].pin_enable);
 }
+//*/
 
-void driver_setup(uint32_t cs_pin) {
+static void driver_spi_setup(uint32_t cs_pin) {
     // It achieves something like this:
     /*
       driver.begin();
@@ -289,7 +284,7 @@ void driver_setup(uint32_t cs_pin) {
         __asm__("nop");
 }
 
-void spi_setup() {
+static void spi_setup(void) {
     rcc_periph_clock_enable(RCC_SPI2);
 
     // SCK and MOSI
@@ -314,17 +309,18 @@ void spi_setup() {
 
     spi_enable(SPI2);
 
-    driver_setup(GPIO1);
-    driver_setup(GPIO4);
+    driver_spi_setup(GPIO1);
+    driver_spi_setup(GPIO4);
 }
 
 void motors_setup(void) {
     for (int i = 0; i < axis_total; i++)
-        motors_driver_setup(axis_drivers[i]);
+        driver_setup(axis_drivers[i]);
 
     spi_setup();
     motors_enable();
-    motors_setup_timers();
+    //motors_disable(); // TODO
+    setup_timers();
 
     // init speeds
     for (size_t i = 0; i < axis_total; i++)
@@ -338,13 +334,29 @@ void motors_tick(void) {
         tick_speeds();
     }
     /*
-    // Neat stuff for debugging
+    motors.acceleration[pan] = 100;
+    motors.acceleration[tilt] = 100;
     if (milliseconds % 2000 < 1000) {
-        speed_goal[pan] = +2000;
-        speed_goal[tilt] = +2000;
+        motors.speed_goal[pan] = +500;
+        motors.speed_goal[tilt] = +500;
     } else {
-        speed_goal[pan] = -30000;
-        speed_goal[tilt] = -30000;
+        motors.speed_goal[pan] = -500;
+        motors.speed_goal[tilt] = -500;
     }
     */
+}
+
+
+motors_t* motors_get_data(void) {
+    return &motors;
+}
+
+void motors_set_speed_goals(int32_t pan_speed, int32_t tilt_speed) {
+    motors.speed_goal[pan]  =  pan_speed;
+    motors.speed_goal[tilt] = tilt_speed;
+}
+
+void motors_set_accelerations(int32_t pan_acceleration, int32_t tilt_acceleration) {
+    motors.acceleration[pan]  =  pan_acceleration;
+    motors.acceleration[tilt] = tilt_acceleration;
 }

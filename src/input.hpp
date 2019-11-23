@@ -20,15 +20,29 @@
 
 #include <stdint.h>
 
-/// Angular  pan acceleration to be achieved (steps/s²)
-extern volatile int32_t acceleration[2];
+// TODO speeds and acceleration are awkwardly in *steps*, they should
+// be in degrees
 
-/// Angular speed to be achieved (steps/s)
-extern volatile int32_t speed_goal[2];
+// TODO Temporary protocol (will be removed after USB is fully embraced)
+// For both input and output:
+// (4 bytes) 0xAA × 4
+// (4 bytes) Pan  speed
+// (4 bytes) Tilt speed
+// (4 bytes) Pan  acceleration
+// (4 bytes) Tilt acceleration
+// (8 bytes) LANC pass-thru (for input only 2 bytes are used, rest is ignored)
+struct packet {
+    int32_t start_sequence; /// 0xAB 0xAB 0xAB 0xAB
+    int32_t  pan_speed_current; /// Current angular speed (steps/s)
+    int32_t tilt_speed_current; /// Current angular speed (steps/s)
+    int32_t  pan_speed_goal; /// Angular speed to be achieved (steps/s)
+    int32_t tilt_speed_goal; /// Angular speed to be achieved (steps/s)
+    int32_t  pan_acceleration; /// Angular acceleration to be achieved (steps/s²)
+    int32_t tilt_acceleration; /// Angular acceleration to be achieved (steps/s²)
+    uint8_t lanc_data[8]; /// LANC pass-thru
+} __attribute__((packed));
 
-/// Zoom speed to be achieved (camera-specific units, -8 … +8 with LANC)
-extern int8_t zoom_speed_goal;
-
-void input_setup();
-void input_tick();
+void input_setup(void);
+void input_tick(void);
 void input_protocol_state(char incomingByte);
+packet* input_make_output_packet(void);

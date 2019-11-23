@@ -35,3 +35,13 @@
 
 void motors_setup(void);
 void motors_tick(void);
+
+enum motors_axis_t { pan, tilt, axis_total };
+struct motors_t {
+    volatile int32_t acceleration[axis_total];
+    volatile int32_t speed_goal[axis_total];
+    volatile int32_t speed_current[axis_total];
+};
+motors_t* motors_get_data(void);
+void motors_set_speed_goals(int32_t pan_speed, int32_t tilt_speed);
+void motors_set_accelerations(int32_t pan_acceleration, int32_t tilt_acceleration);

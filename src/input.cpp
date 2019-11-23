@@ -17,135 +17,71 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "input.hpp"
 
-volatile int32_t acceleration[2] = {1000, 1000};
-volatile int32_t speed_goal[2] = {0, 0};
-
-int8_t zoom_speed_goal = 0;
+#include "cdcacm.hpp"
+#include "lanc.hpp"
+#include "motors.hpp"
+#include "timing.hpp"
 
 uint8_t state = 0;
-uint8_t axis = 0;
+uint8_t byte_count = 0;
 
-uint8_t argument_length = 0;
-char argument[64] = {0};
-
-int type = 0; // 0 – speed, 1 – acceleration
-
-void input_setup() {
-    // TODO: print "Start..."
-}
-
-/// Processing of speed commands.
-void do_speed() {
-    argument[argument_length++] = 0;
-    int32_t value = atoi(argument);
-
-    if        (axis == 0) { // X = tilt
-        speed_goal[1]   = value;
-    } else if (axis == 1) { // Y = zoom
-        zoom_speed_goal = value;
-    } else if (axis == 2) { // Z = pan
-        speed_goal[0]   = value;
-    }
-}
-
-/// Processing of acceleration commands.
-void do_acceleration() {
-    argument[argument_length++] = 0;
-    int32_t value = atoi(argument);
-    if        (axis == 0) { // X = tilt
-        acceleration[1] = value;
-    } else if (axis == 2) { // Z = pan
-        acceleration[0] = value;
-    }
-}
+packet  input_data = {};
+packet output_data = {};
 
 /// Processing of one line of input.
-void do_line() {
-    if (type == 0)
-        do_speed();
-    else
-        do_acceleration();
+static void process_input_packet(void) {
+    // TODO temporary solution
+    motors_set_speed_goals(input_data.pan_speed_goal,
+                           input_data.tilt_speed_goal);
+    motors_set_accelerations(input_data.pan_acceleration,
+                             input_data.tilt_acceleration);
+    lanc_write(input_data.lanc_data[0], input_data.lanc_data[1]);
 }
 
+packet* input_make_output_packet(void) {
+    // TODO refactor once the protocol is changed
+    motors_t* motors = motors_get_data();
+    output_data.pan_speed_current  = motors->speed_current[0];
+    output_data.tilt_speed_current = motors->speed_current[1];
+    output_data.pan_speed_goal  = motors->speed_goal[0];
+    output_data.tilt_speed_goal = motors->speed_goal[1];
+    output_data.pan_acceleration  = motors->acceleration[0];
+    output_data.tilt_acceleration = motors->acceleration[1];
 
-/// State machine for gcode-like input processing.
+    volatile uint8_t* lanc = lanc_read();
+    for (int i = 0; i < 8; i++) // TODO memcpy
+        output_data.lanc_data[i] = lanc[i];
+
+    return &output_data;
+}
+
+/// State machine for input processing.
 void input_protocol_state(char incoming_byte) {
-    switch (state) {
-    case 0:
-        if        (incoming_byte == 'G')
-            state++;
-        else if   (incoming_byte == 'M')
-            state = 10;
-        else
-            state = 0;
-        break;
-    case 1:
-        if        (incoming_byte == '0') {
-            type = 0;
-            state++;
-        } else
-            state = 0;
-        break;
-    case 2:
-        if        (incoming_byte == ' ')
-            state++;
-        else
-            state = 0;
-        break;
-    case 3:
-        if        (incoming_byte == 'X') {
-            axis = 0;
-            state++;
-        } else if (incoming_byte == 'Y') {
-            axis = 1;
-            state++;
-        } else if (incoming_byte == 'Z') {
-            axis = 2;
-            state++;
-        } else
-            state = 0;
-        break;
-    case 4:
-        if        (incoming_byte == '\n') {
-            state = 0;
-            do_line();
-            argument_length = 0;
-            argument[0] = 0;
-        } else if (('0' <= incoming_byte && incoming_byte <= '9') || incoming_byte == '-') {
-            argument[argument_length++] = incoming_byte;
-        } else {
-            argument_length = 0;
-            argument[0] = 0;
-            state = 0;
-        }
-        break;
-    case 10:
-        if        (incoming_byte == '2')
-            state++;
-        else
-            state = 0;
-        break;
-    case 11:
-        if        (incoming_byte == '0')
-            state++;
-        else
-            state = 0;
-        break;
-    case 12:
-        if        (incoming_byte == '1') {
-            type = 1;
-            state = 2;
-        } else
-            state = 0;
-        break;
-    default:
-        state = 0;
+    memset(((unsigned char*) &input_data) + byte_count++, incoming_byte, 1);
+    if (byte_count <= 4 && incoming_byte != 0xAA) {
+        byte_count = 0;
+    } else if (byte_count >= sizeof(packet)) {
+        byte_count = 0;
+        process_input_packet();
     }
 }
 
+void input_setup(void) {
+    output_data.start_sequence = 0xAAAAAAAA;
+}
 
+uint32_t last_ms = 0;
 void input_tick() {
+    if (milliseconds < 5000) // TODO this delay shouldn't exist
+        return;
+    // TODO this should be synced with lanc
+    if (milliseconds % 20 == 0 && last_ms != milliseconds) {
+        packet* data = input_make_output_packet();
+        cdcacm_write(data, sizeof(packet));
+        last_ms = milliseconds;
+    }
 }
