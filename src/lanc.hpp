@@ -20,4 +20,5 @@
 
 void lanc_setup(void);
 void lanc_tick(void);
-void lanc_datagram_tick(void);
+volatile uint8_t* lanc_read(void);
+void lanc_write(uint8_t byte0, uint8_t byte1);

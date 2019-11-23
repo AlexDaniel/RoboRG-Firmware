@@ -27,7 +27,7 @@
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/usart.h>
 
-#include "input.hpp"
+#include "cdcacm.hpp"
 #include "lanc.hpp"
 #include "timing.hpp"
 
@@ -40,38 +40,13 @@ uint32_t datagram_last_byte_ms = 0;
 // Define this when the output is inverted (just one NPN transistor)
 #define LANC_OUT_INVERTED
 
-volatile uint8_t cmd0 = 0;
-volatile uint8_t cmd1 = 0;
+// First two bytes are output, the rest is input
+volatile uint8_t data[8] = {};
 
-/// Send a zoom command to the camera (-8 … +8).
-///
-/// Per http://www.boehmel.de/lanc.htm:
-/// ① 0b0001_1000 – Normal  command to VTR or video camera
-/// ② 0b0010_1000 – Special command to        video camera
-/// ③ 0b0011_1000 – Special command to VTR
-/// ④ 0b0001_1110 – Normal  command to still  video camera
-///
-/// There are zooming commands in both ② and ④, and we will use ②.
-void zoom(int8_t speed) {
-    if (speed == 0) {
-        cmd0 = 0;
-        cmd1 = 0;
-    }
-
-    uint8_t absolute = speed > 0 ? +speed : -speed;
-    if (absolute > 8)
-        return; // no such LANC command
-    if (absolute == 0)
-        return; // nothing to do
-
-    uint8_t byte0 = 0b00101000;
-    uint8_t byte1 = ((speed < 0) << 4) | ((absolute - 1) << 1);
-
-    // TODO disable interrupts here
-    cmd0 = byte0;
-    cmd1 = byte1;
-    // TODO reenable here
-}
+// To make sure we don't overwrite the command during transmission
+volatile uint8_t output_data_staging[2] = {};
+// To make sure we don't overwrite the command during transmission
+volatile uint8_t input_data_staging[8] = {};
 
 void lanc_setup(void) {
     // LANC-detect
@@ -137,6 +112,16 @@ void lanc_setup(void) {
     usart_enable(USART2);
 }
 
+/// This is called after every datagram.
+static void lanc_datagram_tick(void) {
+    // TODO memcpy?
+    data[0] = output_data_staging[0];
+    data[1] = output_data_staging[1];
+    for (int i = 0; i < 8; i++)
+        input_data_staging[i] = data[i];
+}
+
+/// This is called after every byte.
 static void process_lanc_in(uint8_t byte) {
     if (milliseconds - datagram_last_byte_ms > 5) {
         datagram_byte_counter = 0;
@@ -144,20 +129,15 @@ static void process_lanc_in(uint8_t byte) {
         datagram_byte_counter++;
     }
     if (datagram_byte_counter == 7 ||
-        datagram_byte_counter == 0) {
+        datagram_byte_counter == 0) { // for output bytes only (0th and 1st)
         // enable start bit trigger for the next byte
         exti_enable_request(EXTI3);
-        lanc_datagram_tick();
     }
     datagram_last_byte_ms = milliseconds;
-
-    // byte 4, REC  = 0xFB
-    // byte 4, STBY = 0xEB
-    if (datagram_byte_counter == 4) {
-        if (byte == 0xEB) {
-            //gpio_toggle(GPIOA, GPIO6);
-        }
-    }
+    if (datagram_byte_counter >= 2 and datagram_byte_counter <= 7)
+        data[datagram_byte_counter] = byte;
+    if (datagram_byte_counter == 7)
+        lanc_datagram_tick();
 }
 
 #ifndef LANC_OUT_UART
@@ -183,7 +163,6 @@ void tim4_isr(void) {
         TIM_CNT(TIM4) = 1;
         bit_counter++;
     } else {
-      //gpio_toggle(GPIOA, GPIO6);
         bit_counter = 0;
 #ifdef LANC_OUT_INVERTED
         gpio_clear(GPIOA, PIN_LANC_OUT);
@@ -197,15 +176,15 @@ void tim4_isr(void) {
 #endif
 
 void exti3_isr(void) {
-    if (cmd0 != 0) {
-        uint8_t data;
+    if (data[0] != 0) {
+        uint8_t byte_to_send;
         bool skip = false;
         switch (datagram_byte_counter) {
         case 7: // ahead of time by a byte tick
-            data = cmd0;
+            byte_to_send = data[0];
             break;
         case 0:
-            data = cmd1;
+            byte_to_send = data[1];
             break;
         default:
             skip = true;
@@ -213,10 +192,10 @@ void exti3_isr(void) {
         }
         if (!skip) {
 #ifdef LANC_OUT_UART
-            usart_send(USART2, ~data);
+            usart_send(USART2, ~byte_to_send);
             USART_CR1(USART2) |= USART_CR1_TXEIE;
 #else
-            current_byte = data;
+            current_byte = byte_to_send;
             TIM_CNT(TIM4) = 1;
             TIM_CR1(TIM4) |= TIM_CR1_CEN; // start timer
 #endif
@@ -234,41 +213,29 @@ void usart2_isr(void) {
         ((USART_SR(USART2)  & USART_SR_RXNE)    != 0)) {
 
         uint8_t data = usart_recv(USART2);
-        process_lanc_in(data);
+        // invert so that the data corresponds to protocol description
+        process_lanc_in(~data);
     }
 
     // Check if we were called because of TXE
     if (((USART_CR1(USART2) & USART_CR1_TXEIE) != 0) &&
         ((USART_SR(USART2)  & USART_SR_TXE)    != 0)) {
 
-
         /* Disable the TXE interrupt as we don't need it anymore. */
         USART_CR1(USART2) &= ~USART_CR1_TXEIE;
     }
 }
 
-// some zoom ramping
-int zoom_multiplier = 8;
-int zoom_speed = 0;
+/// Stage the command to the device.
+void lanc_write(uint8_t byte0, uint8_t byte1) {
+    output_data_staging[0] = byte0;
+    output_data_staging[1] = byte1;
+}
 
-/// This is called after every datagram.
-void lanc_datagram_tick(void) {
-    int target_multiplied = zoom_speed_goal * zoom_multiplier;
-    if (zoom_speed != target_multiplied) {
-        int inc = target_multiplied - zoom_speed > 0 ? +1 : -1;
-        zoom_speed += inc;
-    }
-    int zoom_command = zoom_speed / zoom_multiplier;
-    zoom(zoom_command);
+/// Get the last lanc datagram.
+volatile uint8_t* lanc_read(void) {
+    return input_data_staging;
 }
 
 void lanc_tick(void) {
-    /*
-    // For debugging:
-    if (milliseconds % 4000 < 2000) {
-        zoom_speed_goal = -4;
-    } else {
-        zoom_speed_goal = +4;
-    }
-    */
 }
