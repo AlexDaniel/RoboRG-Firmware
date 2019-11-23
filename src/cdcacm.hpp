@@ -18,5 +18,6 @@
 
 #pragma once
 
+void cdcacm_write(const void *buf, uint16_t len);
 void cdcacm_setup(void);
 void cdcacm_tick(void);

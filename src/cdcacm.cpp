@@ -245,6 +245,10 @@ static void cdcacm_set_config(usbd_device *usbd_dev, uint16_t wValue)
                                 cdcacm_control_request);
 }
 
+void cdcacm_write(const void *buf, uint16_t len) {
+    usbd_ep_write_packet(main_usbd_dev, 0x82, buf, len);
+}
+
 void cdcacm_setup(void) {
     /* Setup GPIOC Pin 12 to pull up the D+ high, so autodect works
      * with the bootloader.  The circuit is active low. */
