@@ -135,7 +135,7 @@ static void do_step_tilt(void) {
     } else if (speed < 0) {
         gpio_set(  GPIOB, TILT_DIR_PIN);
         gpio_set(  GPIOA, TILT_STEP_PIN);
-        step_counter[tilt]++;
+        step_counter[tilt]--;
         gpio_clear(GPIOA, TILT_STEP_PIN);
     } else { } // zero speed, no stepping
 }
